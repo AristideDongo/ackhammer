@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -227,5 +228,23 @@ func TestSeedFromEnvironment(t *testing.T) {
 	}
 	if rep.Seed != 1234 {
 		t.Errorf("seed = %d, want 1234", rep.Seed)
+	}
+}
+
+// failingConsumer cannot subscribe: Consume returns an error at once.
+type failingConsumer struct{ *memtarget.Target }
+
+func (failingConsumer) Consume(context.Context, ackhammer.Handler) error {
+	return errors.New("cannot subscribe")
+}
+
+func TestConsumerExitIsReported(t *testing.T) {
+	rep, got := execute(t, failingConsumer{memtarget.New(memtarget.Config{})}, ackhammer.Scenario{
+		Name:         "consumer-exit",
+		DrainTimeout: 200 * time.Millisecond,
+	})
+	expectStatus(t, rep, got, map[string]invariant.Status{"NoStall": invariant.Fail})
+	if !strings.Contains(rep.Text(), "cannot subscribe") {
+		t.Errorf("the error is not in the report:\n%s", rep.Text())
 	}
 }

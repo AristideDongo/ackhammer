@@ -94,8 +94,8 @@ func (r *Report) Timeline(id string) string {
 	fmt.Fprintf(&b, "  Timeline %s :\n", id)
 	delivered := false
 	for _, e := range r.Events {
-		timed := e.Type == ledger.FaultInjected && e.MsgID == ""
-		if e.MsgID != id && !timed && e.Type != ledger.ConsumerStuck {
+		timed := (e.Type == ledger.FaultInjected && e.MsgID == "") || e.Type == ledger.ConsumerStuck || e.Type == ledger.ConsumerExit
+		if e.MsgID != id && !timed {
 			continue
 		}
 		label := string(e.Type)
