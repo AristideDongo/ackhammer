@@ -233,34 +233,12 @@ func generate(rnd *rand.Rand, sc core.Scenario) []core.Message {
 // checkCapabilities fails fast when a fault needs an interface the target
 // lacks, instead of failing halfway through the run.
 func checkCapabilities(target core.Target, faults []core.TimedFault) error {
-	dry := dryRun{target}
 	for _, f := range faults {
-		if err := f.Inject(context.Background(), dry); errors.Is(err, core.ErrUnsupported) {
-			return fmt.Errorf("%w: %s on target %s", core.ErrUnsupported, f.Name(), target.Name())
+		if c, ok := f.(core.Checker); ok {
+			if err := c.Check(target); err != nil {
+				return fmt.Errorf("%s on target %s: %w", f.Name(), target.Name(), err)
+			}
 		}
-	}
-	return nil
-}
-
-// dryRun is a Controller that only checks capabilities.
-type dryRun struct{ target core.Target }
-
-func (d dryRun) Target() core.Target          { return d.target }
-func (d dryRun) Cancel(context.Context) error { return nil }
-func (d dryRun) Break(context.Context, func(context.Context) error) error {
-	return nil
-}
-
-func (d dryRun) Stop(context.Context) error {
-	if _, ok := d.target.(core.ConsumerStopper); !ok {
-		return core.ErrUnsupported
-	}
-	return nil
-}
-
-func (d dryRun) Restart(context.Context) error {
-	if _, ok := d.target.(core.Restartable); !ok {
-		return core.ErrUnsupported
 	}
 	return nil
 }

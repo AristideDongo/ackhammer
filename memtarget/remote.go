@@ -59,10 +59,15 @@ func (b *rpcBroker) Settle(a SettleArgs, _ *int) error {
 	return nil
 }
 
-// Remote is a consumer connected to a broker served by Target.Serve.
+// Remote is a consumer connected to a broker served by Target.Serve. It
+// reconnects by itself when the connection breaks; a settle lost with the
+// connection leaves the message in flight until its ack deadline.
 type Remote struct {
-	client      *rpc.Client
+	addr        string
 	concurrency int
+
+	mu     sync.Mutex
+	client *rpc.Client
 }
 
 // Dial connects to a broker served by Target.Serve.
@@ -71,7 +76,43 @@ func Dial(addr string, concurrency int) (*Remote, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Remote{client: c, concurrency: max(1, concurrency)}, nil
+	return &Remote{addr: addr, client: c, concurrency: max(1, concurrency)}, nil
+}
+
+// call runs an RPC, reconnecting until it succeeds or ctx is done.
+func (r *Remote) call(ctx context.Context, method string, args, reply any) error {
+	for {
+		r.mu.Lock()
+		c := r.client
+		r.mu.Unlock()
+		if c != nil {
+			err := c.Call(method, args, reply)
+			if err == nil {
+				return nil
+			}
+			r.mu.Lock()
+			if r.client == c {
+				_ = c.Close()
+				r.client = nil
+			}
+			r.mu.Unlock()
+			if method == "Memtarget.Settle" {
+				return err // the delivery belongs to the lost connection
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+		r.mu.Lock()
+		if r.client == nil {
+			if c, err := net.DialTimeout("tcp", r.addr, time.Second); err == nil {
+				r.client = rpc.NewClient(c)
+			}
+		}
+		r.mu.Unlock()
+	}
 }
 
 // Consume delivers messages to h until ctx is done.
@@ -81,7 +122,7 @@ func (r *Remote) Consume(ctx context.Context, h core.Handler) error {
 		wg.Go(func() {
 			for ctx.Err() == nil {
 				var next NextReply
-				if err := r.client.Call("Memtarget.Next", 0, &next); err != nil {
+				if err := r.call(ctx, "Memtarget.Next", 0, &next); err != nil {
 					return
 				}
 				if !next.OK {
@@ -95,7 +136,7 @@ func (r *Remote) Consume(ctx context.Context, h core.Handler) error {
 				if err := h(ctx, next.Msg); err != nil {
 					args.Err = err.Error()
 				}
-				_ = r.client.Call("Memtarget.Settle", args, new(int))
+				_ = r.call(ctx, "Memtarget.Settle", args, new(int))
 			}
 		})
 	}
@@ -104,4 +145,11 @@ func (r *Remote) Consume(ctx context.Context, h core.Handler) error {
 }
 
 // Close closes the connection.
-func (r *Remote) Close() error { return r.client.Close() }
+func (r *Remote) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.client == nil {
+		return nil
+	}
+	return r.client.Close()
+}

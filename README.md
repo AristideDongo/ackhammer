@@ -166,6 +166,8 @@ Refine with `.WithMaxRedeliveries(n)` (deliveries allowed after a success), `.Wi
 | `GracefulStop(at)` | Stops consuming gracefully, then resumes | `ConsumerStopper` |
 | `RestartConsumer(at)` | Recreates the consumer | `Restartable` |
 | `KillProcess(at)` | Kills the consumer process with SIGKILL, then starts a new one | `Killer` (package `subprocess`) |
+| `netfault.Cut(proxy, at, d)` | Cuts the connection to the broker for `d` (Toxiproxy) | consumer connected through the proxy |
+| `netfault.Latency(proxy, at, l, jitter, d)` | Adds network latency for `d` (Toxiproxy) | consumer connected through the proxy |
 
 Selectors: `OnMessage(n)`, `OnKey(k)`, `EveryNth(n)`, `Random(p)`. Random selection uses the scenario seed.
 
@@ -188,7 +190,7 @@ Every run is seeded. A failing run prints the command to replay it; `ACKHAMMER_S
 ## Roadmap
 
 - **v0.1**: Postgres and Pub/Sub emulator brokers via testcontainers, reproductions of watermill#700, #636, #671 and sdk-go#1234 in `scenarios/upstream`.
-- **v0.2**: per-key order on real brokers, `TraceContinuity`, process kill and network faults (Toxiproxy), GitHub Action, YAML scenarios and CLI.
+- **v0.2**: per-key order on real brokers, `TraceContinuity`, GitHub Action, YAML scenarios and CLI.
 - **v0.3**: a resume contract for SSE, WebSocket and MQTT, with conformance scenarios.
 
 ## License

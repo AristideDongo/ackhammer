@@ -16,6 +16,7 @@ package brokers
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -147,10 +148,13 @@ func PubSub(t *testing.T, opts ...Option) PubSubEmulator {
 	return PubSubEmulator{Endpoint: c.URI(), ProjectID: c.ProjectID()}
 }
 
-// Proxy declares a Toxiproxy proxy to an upstream reachable on the Network.
+// Proxy declares a Toxiproxy proxy. Set Upstream to reach a container on
+// the Network (alias:port), or HostPort to reach a port of the host (for
+// example a broker running in the test process).
 type Proxy struct {
 	Name     string
-	Upstream string // alias:port on the Network
+	Upstream string
+	HostPort int
 }
 
 // ToxiproxyServer is a running Toxiproxy.
@@ -164,13 +168,22 @@ type ToxiproxyServer struct {
 // proxy through Toxiproxy.
 func (s *ToxiproxyServer) Endpoint(name string) string { return s.endpoints[name] }
 
-// Toxiproxy starts Toxiproxy on n with the given proxies.
+// Toxiproxy starts Toxiproxy with the given proxies. n may be nil when every
+// proxy targets a HostPort.
 func Toxiproxy(t *testing.T, n *Network, proxies ...Proxy) *ToxiproxyServer {
 	t.Helper()
 	Require(t)
-	opts := []testcontainers.ContainerCustomizer{network.WithNetwork([]string{"toxiproxy"}, n.nw)}
+	var opts []testcontainers.ContainerCustomizer
+	if n != nil {
+		opts = append(opts, network.WithNetwork([]string{"toxiproxy"}, n.nw))
+	}
 	for _, p := range proxies {
-		opts = append(opts, tctoxiproxy.WithProxy(p.Name, p.Upstream))
+		upstream := p.Upstream
+		if p.HostPort != 0 {
+			upstream = net.JoinHostPort(testcontainers.HostInternal, strconv.Itoa(p.HostPort))
+			opts = append(opts, testcontainers.WithHostPortAccess(p.HostPort))
+		}
+		opts = append(opts, tctoxiproxy.WithProxy(p.Name, upstream))
 	}
 	c, err := tctoxiproxy.Run(t.Context(), ToxiproxyImage, opts...)
 	testcontainers.CleanupContainer(t, c)
