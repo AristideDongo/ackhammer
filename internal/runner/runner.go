@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -137,8 +140,42 @@ func Execute(ctx context.Context, target core.Target, sc core.Scenario) (*report
 			Guarantee:       sc.Expect,
 			PoisonSupported: poisonSupported,
 		}),
-		Events: events,
+		Events:      events,
+		Environment: environment(),
 	}, nil
+}
+
+// libraries are the module prefixes reported in Report.Environment.
+var libraries = []string{
+	"github.com/AristideDongo/ackhammer",
+	"github.com/ThreeDotsLabs/",
+	"github.com/cloudevents/",
+	"github.com/nats-io/",
+	"cloud.google.com/go/pubsub",
+	"github.com/twmb/franz-go",
+	"github.com/rabbitmq/",
+	"github.com/eclipse/paho",
+	"github.com/jackc/pgx",
+}
+
+func environment() map[string]string {
+	env := map[string]string{"go": runtime.Version(), "os/arch": runtime.GOOS + "/" + runtime.GOARCH}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return env
+	}
+	for _, dep := range info.Deps {
+		for _, prefix := range libraries {
+			if strings.HasPrefix(dep.Path, prefix) {
+				v := dep.Version
+				if dep.Replace != nil {
+					v += " => " + dep.Replace.Path + " " + dep.Replace.Version
+				}
+				env[dep.Path] = strings.TrimSpace(v)
+			}
+		}
+	}
+	return env
 }
 
 func normalize(sc core.Scenario) (core.Scenario, error) {

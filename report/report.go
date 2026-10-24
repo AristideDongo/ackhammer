@@ -5,6 +5,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -22,6 +23,18 @@ type Report struct {
 	Results  []invariant.Result `json:"results"`
 	Events   []ledger.Event     `json:"events"`
 	Replay   string             `json:"replay,omitempty"`
+	// Environment holds the Go version and the versions of the messaging
+	// libraries linked in the test binary.
+	Environment map[string]string `json:"environment,omitempty"`
+}
+
+// Read decodes a report written by JSON.
+func Read(r io.Reader) (*Report, error) {
+	var rep Report
+	if err := json.NewDecoder(r).Decode(&rep); err != nil {
+		return nil, err
+	}
+	return &rep, nil
 }
 
 // Failed reports whether at least one invariant failed.

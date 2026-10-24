@@ -183,12 +183,12 @@ Selectors: `OnMessage(n)`, `OnKey(k)`, `EveryNth(n)`, `Random(p)`. Random select
 
 ## Replay and reports
 
-Every run is seeded. A failing run prints the command to replay it; `ACKHAMMER_SEED` overrides the seed. Set `ACKHAMMER_REPORT_DIR` to write each report as JSON. Ackhammer is not a deterministic simulator: it drives real libraries and real timing, so keep explicit margins on time-based guarantees.
+Every run is seeded. A failing run prints the command to replay it; `ACKHAMMER_SEED` overrides the seed. Set `ACKHAMMER_REPORT_DIR` to write each report as JSON. The `report` package renders reports as text, JSON (`report.Read` loads them back), JUnit XML (`report.JUnit`), a self-contained HTML page (`report.HTML`) and Markdown ready to paste into a GitHub issue (`Report.Issue`, with the Go and library versions). Ackhammer is not a deterministic simulator: it drives real libraries and real timing, so keep explicit margins on time-based guarantees.
 
 ## Roadmap
 
 - **v0.1**: Postgres and Pub/Sub emulator brokers via testcontainers, reproductions of watermill#700, #636, #671 and sdk-go#1234 in `scenarios/upstream`.
-- **v0.2**: per-key order on real brokers, `TraceContinuity`, process kill and network faults (Toxiproxy), JUnit/HTML reports, GitHub Action, YAML scenarios and CLI.
+- **v0.2**: per-key order on real brokers, `TraceContinuity`, process kill and network faults (Toxiproxy), GitHub Action, YAML scenarios and CLI.
 - **v0.3**: a resume contract for SSE, WebSocket and MQTT, with conformance scenarios.
 
 ## License
