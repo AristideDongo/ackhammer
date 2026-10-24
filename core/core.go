@@ -147,12 +147,15 @@ type TimedFault interface {
 	Inject(ctx context.Context, c Controller) error
 }
 
+// Checker is implemented by faults that need target capabilities. The run
+// calls Check before starting and fails at once if it returns an error
+// (usually wrapping ErrUnsupported).
+type Checker interface {
+	Check(t Target) error
+}
+
 // Controller lets timed faults act on the running consumer. Every method
 // breaks the consumer and then resumes consuming (recovery phase).
-//
-// Before the run, faults are injected once against a dry-run Controller that
-// performs nothing: a fault must return ErrUnsupported from Inject when the
-// target lacks a capability it needs, so the run fails before it starts.
 type Controller interface {
 	// Target is the target under test.
 	Target() Target

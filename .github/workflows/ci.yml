@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         go: ["1.26", "1.27"]
-        module: [".", "brokers", "targets/watermill", "targets/cloudevents"]
+        module: [".", "brokers", "netfault", "targets/watermill", "targets/cloudevents"]
     defaults:
       run:
         working-directory: ${{ matrix.module }}

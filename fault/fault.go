@@ -145,6 +145,14 @@ type timedFault struct {
 	name   string
 	at     time.Duration
 	inject func(core.Controller, context.Context) error
+	needs  func(core.Target) bool // nil: no requirement
+}
+
+func (f *timedFault) Check(t core.Target) error {
+	if f.needs != nil && !f.needs(t) {
+		return core.ErrUnsupported
+	}
+	return nil
 }
 
 func (f *timedFault) Name() string      { return fmt.Sprintf("%s(%s)", f.name, f.at) }
@@ -156,13 +164,13 @@ func (f *timedFault) Inject(ctx context.Context, c core.Controller) error {
 // CancelDuringReceive cancels the context given to Target.Consume at the
 // given offset, then resumes consuming.
 func CancelDuringReceive(at time.Duration) core.TimedFault {
-	return &timedFault{"CancelDuringReceive", at, core.Controller.Cancel}
+	return &timedFault{"CancelDuringReceive", at, core.Controller.Cancel, nil}
 }
 
 // GracefulStop stops the consumer gracefully at the given offset, then
 // resumes consuming. The target must implement core.ConsumerStopper.
 func GracefulStop(at time.Duration) core.TimedFault {
-	return &timedFault{"GracefulStop", at, core.Controller.Stop}
+	return &timedFault{"GracefulStop", at, core.Controller.Stop, is[core.ConsumerStopper]}
 }
 
 // KillProcess kills the consumer process abruptly at the given offset, then
@@ -175,11 +183,13 @@ func KillProcess(at time.Duration) core.TimedFault {
 			return core.ErrUnsupported
 		}
 		return c.Break(ctx, func(context.Context) error { return k.Kill() })
-	}}
+	}, is[core.Killer]}
 }
+
+func is[T any](t core.Target) bool { _, ok := t.(T); return ok }
 
 // RestartConsumer closes and recreates the consumer at the given offset.
 // The target must implement core.Restartable.
 func RestartConsumer(at time.Duration) core.TimedFault {
-	return &timedFault{"RestartConsumer", at, core.Controller.Restart}
+	return &timedFault{"RestartConsumer", at, core.Controller.Restart, is[core.Restartable]}
 }
