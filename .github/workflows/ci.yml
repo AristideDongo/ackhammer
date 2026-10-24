@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         go: ["1.26", "1.27"]
-        module: [".", "targets/watermill", "targets/cloudevents"]
+        module: [".", "brokers", "targets/watermill", "targets/cloudevents"]
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -33,3 +33,11 @@ jobs:
           name: ackhammer-reports-${{ matrix.go }}-${{ strategy.job-index }}
           path: reports/
           if-no-files-found: ignore
+
+  # Single required check for branch protection, whatever the matrix.
+  ci:
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test.result }}" = success
