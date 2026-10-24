@@ -178,7 +178,7 @@ func TestPoisonRouted(t *testing.T) {
 type consumeOnly struct{ core.Target }
 
 func TestUnsupportedFaultFailsFast(t *testing.T) {
-	for _, f := range []ackhammer.Fault{fault.RestartConsumer(0), fault.GracefulStop(0)} {
+	for _, f := range []ackhammer.Fault{fault.RestartConsumer(0), fault.GracefulStop(0), fault.KillProcess(0)} {
 		_, err := ackhammer.Execute(t.Context(), consumeOnly{memtarget.New(memtarget.Config{})}, ackhammer.Scenario{
 			Name:   "unsupported",
 			Faults: []ackhammer.Fault{f},

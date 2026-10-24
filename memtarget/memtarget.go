@@ -157,7 +157,7 @@ func (t *Target) work(ctx context.Context, stop <-chan struct{}, h core.Handler)
 			}
 			continue
 		}
-		t.settle(e, token, h(ctx, e.msg))
+		t.settle(e.msg.ID, token, h(ctx, e.msg))
 	}
 }
 
@@ -190,13 +190,14 @@ func (t *Target) next() (*entry, uint64) {
 
 // settle acks or nacks a delivery. A late answer, for a delivery that was
 // already handed out again, is ignored, as real brokers do.
-func (t *Target) settle(e *entry, token uint64, err error) {
+func (t *Target) settle(id string, token uint64, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if cur, ok := t.inflight[e.msg.ID]; !ok || cur.token != token {
+	e, ok := t.inflight[id]
+	if !ok || e.token != token {
 		return
 	}
-	delete(t.inflight, e.msg.ID)
+	delete(t.inflight, id)
 	if !e.deadline.IsZero() && time.Now().After(e.deadline) {
 		// Too late: the broker already considers the delivery lost.
 		if t.cfg.Bugs.DropBatchOnDeadline {

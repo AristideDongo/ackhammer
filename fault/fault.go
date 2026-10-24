@@ -165,6 +165,19 @@ func GracefulStop(at time.Duration) core.TimedFault {
 	return &timedFault{"GracefulStop", at, core.Controller.Stop}
 }
 
+// KillProcess kills the consumer process abruptly at the given offset, then
+// starts a new one. Deliveries in flight are neither acked nor nacked. The
+// target must implement core.Killer (see package subprocess).
+func KillProcess(at time.Duration) core.TimedFault {
+	return &timedFault{"KillProcess", at, func(c core.Controller, ctx context.Context) error {
+		k, ok := c.Target().(core.Killer)
+		if !ok {
+			return core.ErrUnsupported
+		}
+		return c.Break(ctx, func(context.Context) error { return k.Kill() })
+	}}
+}
+
 // RestartConsumer closes and recreates the consumer at the given offset.
 // The target must implement core.Restartable.
 func RestartConsumer(at time.Duration) core.TimedFault {

@@ -107,6 +107,28 @@ target := cloudevents.New(cloudevents.Config{
 
 Each message becomes a CloudEvent whose `id` is the message ID, with the `partitionkey` and `traceparent` extensions. A handler error is answered with a NACK.
 
+## Killing the consumer mid-processing
+
+`subprocess` runs the real consumer client in a child process (usually the test binary re-executed), so `KillProcess` can kill it like a production crash: the deliveries it held are never acked and the broker must redeliver them.
+
+```go
+func TestMain(m *testing.M) {
+	if subprocess.IsChild("orders") {
+		os.Exit(subprocess.Serve(func(ctx context.Context, h ackhammer.Handler) error {
+			return newOrdersConsumer().Consume(ctx, h) // the real subscriber
+		}))
+	}
+	os.Exit(m.Run())
+}
+
+target := subprocess.New(subprocess.Config{
+	Target:  publisher,                 // publishes and inspects the poison queue
+	Command: subprocess.Self("orders"), // re-executes this test binary
+})
+```
+
+A crash after the business effect but before the ack applies the effect twice: with `EffectivelyOnce`, a naive handler fails `EffectOnce`.
+
 ## Your own handler and effects
 
 `Scenario.Handler` is your consumer logic; Ackhammer runs it behind the probe. To check idempotence, declare `EffectivelyOnce` and record each business effect:
@@ -143,6 +165,7 @@ Refine with `.WithMaxRedeliveries(n)` (deliveries allowed after a success), `.Wi
 | `CancelDuringReceive(at)` | Cancels the `Consume` context, then resumes | — |
 | `GracefulStop(at)` | Stops consuming gracefully, then resumes | `ConsumerStopper` |
 | `RestartConsumer(at)` | Recreates the consumer | `Restartable` |
+| `KillProcess(at)` | Kills the consumer process with SIGKILL, then starts a new one | `Killer` (package `subprocess`) |
 
 Selectors: `OnMessage(n)`, `OnKey(k)`, `EveryNth(n)`, `Random(p)`. Random selection uses the scenario seed.
 
