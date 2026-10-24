@@ -196,24 +196,37 @@ func generate(rnd *rand.Rand, sc core.Scenario) []core.Message {
 // checkCapabilities fails fast when a fault needs an interface the target
 // lacks, instead of failing halfway through the run.
 func checkCapabilities(target core.Target, faults []core.TimedFault) error {
-	_, restartable := target.(core.Restartable)
-	_, stoppable := target.(core.ConsumerStopper)
+	dry := dryRun{target}
 	for _, f := range faults {
-		probe := &capabilityProbe{}
-		_ = f.Inject(context.Background(), probe)
-		if (probe.restart && !restartable) || (probe.stop && !stoppable) {
+		if err := f.Inject(context.Background(), dry); errors.Is(err, core.ErrUnsupported) {
 			return fmt.Errorf("%w: %s on target %s", core.ErrUnsupported, f.Name(), target.Name())
 		}
 	}
 	return nil
 }
 
-// capabilityProbe records which Controller methods a fault calls.
-type capabilityProbe struct{ stop, restart bool }
+// dryRun is a Controller that only checks capabilities.
+type dryRun struct{ target core.Target }
 
-func (p *capabilityProbe) Cancel(context.Context) error  { return nil }
-func (p *capabilityProbe) Stop(context.Context) error    { p.stop = true; return nil }
-func (p *capabilityProbe) Restart(context.Context) error { p.restart = true; return nil }
+func (d dryRun) Target() core.Target          { return d.target }
+func (d dryRun) Cancel(context.Context) error { return nil }
+func (d dryRun) Break(context.Context, func(context.Context) error) error {
+	return nil
+}
+
+func (d dryRun) Stop(context.Context) error {
+	if _, ok := d.target.(core.ConsumerStopper); !ok {
+		return core.ErrUnsupported
+	}
+	return nil
+}
+
+func (d dryRun) Restart(context.Context) error {
+	if _, ok := d.target.(core.Restartable); !ok {
+		return core.ErrUnsupported
+	}
+	return nil
+}
 
 // drain waits until every message is handled or poisoned, all timed faults
 // fired, or the drain timeout expires.
@@ -312,6 +325,8 @@ func (c *consumer) wait(done chan struct{}) {
 	}
 }
 
+func (c *consumer) Target() core.Target { return c.target }
+
 func (c *consumer) Cancel(context.Context) error {
 	c.stop()
 	c.start()
@@ -323,11 +338,15 @@ func (c *consumer) Stop(ctx context.Context) error {
 	if !ok {
 		return core.ErrUnsupported
 	}
+	return c.Break(ctx, s.StopConsuming)
+}
+
+func (c *consumer) Break(ctx context.Context, action func(context.Context) error) error {
 	c.mu.Lock()
 	done := c.done
 	c.stopping = true
 	c.mu.Unlock()
-	if err := s.StopConsuming(ctx); err != nil {
+	if err := action(ctx); err != nil {
 		return err
 	}
 	c.wait(done)

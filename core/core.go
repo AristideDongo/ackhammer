@@ -60,6 +60,15 @@ type PoisonInspector interface {
 	PoisonedIDs(ctx context.Context) ([]string, error)
 }
 
+// Killer targets run their consumer in a separate process that can be
+// killed abruptly. Required by KillProcess.
+type Killer interface {
+	Target
+	// Kill stops the consumer process at once (SIGKILL): no ack, no nack,
+	// no cleanup. The running Consume then returns.
+	Kill() error
+}
+
 // ErrUnsupported is returned when a fault needs a capability the target
 // does not implement.
 var ErrUnsupported = errors.New("ackhammer: target does not support this fault")
@@ -140,13 +149,23 @@ type TimedFault interface {
 
 // Controller lets timed faults act on the running consumer. Every method
 // breaks the consumer and then resumes consuming (recovery phase).
+//
+// Before the run, faults are injected once against a dry-run Controller that
+// performs nothing: a fault must return ErrUnsupported from Inject when the
+// target lacks a capability it needs, so the run fails before it starts.
 type Controller interface {
+	// Target is the target under test.
+	Target() Target
 	// Cancel cancels the context given to Consume.
 	Cancel(ctx context.Context) error
 	// Stop calls ConsumerStopper.StopConsuming.
 	Stop(ctx context.Context) error
 	// Restart cancels Consume and calls Restartable.Restart.
 	Restart(ctx context.Context) error
+	// Break runs action, which is expected to make Consume return on its
+	// own (a crash, a closed connection…), waits for Consume to return,
+	// then resumes consuming.
+	Break(ctx context.Context, action func(context.Context) error) error
 }
 
 // Scenario is one fault-injection test.
