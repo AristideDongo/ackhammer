@@ -1,126 +1,120 @@
+// Package ledger is Ackhammer's journal of truth: everything that was
+// published and everything the probe observed, timestamped and ordered.
 package ledger
 
 import (
 	"sync"
 	"time"
-
-	"github.com/AristideDongo/ackhammer/core"
 )
 
-// EventType represents ledger event types.
-type EventType string
+// Type is the kind of a ledger event.
+type Type string
 
 const (
-	Published EventType = "published"
-	Received  EventType = "received"
-	Processed EventType = "processed"
-	Acked     EventType = "acked"
-	Nacked    EventType = "nacked"
-	Errored   EventType = "errored"
-	Effect    EventType = "effect"
-	Fault     EventType = "fault"
+	Published     Type = "published"      // message handed to Target.Publish
+	Received      Type = "received"       // delivery reached the probe
+	Succeeded     Type = "succeeded"      // handler returned nil (ack requested)
+	Failed        Type = "failed"         // handler returned an error (nack requested)
+	Panicked      Type = "panicked"       // handler panicked, recovered by the probe
+	Effect        Type = "effect"         // business effect recorded by the handler
+	FaultInjected Type = "fault"          // a fault fired
+	ConsumerExit  Type = "consumer_exit"  // Consume returned on its own
+	ConsumerStuck Type = "consumer_stuck" // Consume did not return after cancel
+	Poisoned      Type = "poisoned"       // message found in the poison queue
 )
 
-// Event is a ledger entry.
+// Event is one ledger entry.
 type Event struct {
-	ID        string
-	MsgID     string
-	Key       string
-	Type      EventType
-	Time      time.Time
-	Traceparent string
-	Meta      map[string]string
+	Seq         int       `json:"seq"`
+	Type        Type      `json:"type"`
+	Time        time.Time `json:"time"`
+	MsgID       string    `json:"msg_id,omitempty"`
+	Key         string    `json:"key,omitempty"`
+	Index       int       `json:"index,omitempty"`   // publication order, 1-based (Published only)
+	Attempt     int       `json:"attempt,omitempty"` // delivery number, 1-based
+	Traceparent string    `json:"traceparent,omitempty"`
+	Detail      string    `json:"detail,omitempty"` // fault name, error text, effect name…
 }
 
-// Ledger is append-only, concurrent-safe truth journal.
+// Ledger is an append-only, concurrency-safe event journal.
 type Ledger struct {
-	mu     sync.RWMutex
+	mu     sync.Mutex
 	events []Event
-	byMsg  map[string][]Event
+	now    func() time.Time
 }
 
-// New creates a new ledger.
-func New() *Ledger {
-	return &Ledger{
-		events: make([]Event, 0, 1024),
-		byMsg:  make(map[string][]Event),
-	}
-}
+// New returns an empty ledger.
+func New() *Ledger { return &Ledger{now: time.Now} }
 
-// Append adds an event.
-func (l *Ledger) Append(e Event) {
+// Append stamps e with a sequence number and the current time (unless set)
+// and stores it.
+func (l *Ledger) Append(e Event) Event {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.events = append(l.events, e)
-	if e.MsgID != "" {
-		l.byMsg[e.MsgID] = append(l.byMsg[e.MsgID], e)
+	e.Seq = len(l.events) + 1
+	if e.Time.IsZero() {
+		e.Time = l.now()
 	}
+	l.events = append(l.events, e)
+	return e
 }
 
-// Events returns all events.
+// Events returns a copy of all events in append order.
 func (l *Ledger) Events() []Event {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	out := make([]Event, len(l.events))
-	copy(out, l.events)
-	return out
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]Event(nil), l.events...)
 }
 
-// ForMessage returns events for a message.
-func (l *Ledger) ForMessage(id string) []Event {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	out := make([]Event, len(l.byMsg[id]))
-	copy(out, l.byMsg[id])
-	return out
+// Len returns the number of events.
+func (l *Ledger) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.events)
 }
 
-// PublishedIDs returns all published message IDs.
-func (l *Ledger) PublishedIDs() []string {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	seen := map[string]bool{}
-	var ids []string
-	for _, e := range l.events {
-		if e.Type == Published && !seen[e.MsgID] {
-			ids = append(ids, e.MsgID)
-			seen[e.MsgID] = true
+// View indexes a snapshot of events for querying.
+type View struct {
+	Events    []Event
+	Published []Event            // Published events in publication order
+	ByMsg     map[string][]Event // all events per message, in order
+	Faults    []Event            // FaultInjected events with no message
+}
+
+// NewView indexes events.
+func NewView(events []Event) *View {
+	v := &View{Events: events, ByMsg: map[string][]Event{}}
+	for _, e := range events {
+		if e.MsgID != "" {
+			v.ByMsg[e.MsgID] = append(v.ByMsg[e.MsgID], e)
+		}
+		switch {
+		case e.Type == Published:
+			v.Published = append(v.Published, e)
+		case e.Type == FaultInjected && e.MsgID == "":
+			v.Faults = append(v.Faults, e)
 		}
 	}
-	return ids
+	return v
 }
 
-// ProcessCount returns number of times a message was processed.
-func (l *Ledger) ProcessCount(id string) int {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
+// Count returns how many events of type t exist for message id.
+func (v *View) Count(id string, t Type) int {
 	n := 0
-	for _, e := range l.byMsg[id] {
-		if e.Type == Processed || e.Type == Received {
+	for _, e := range v.ByMsg[id] {
+		if e.Type == t {
 			n++
 		}
 	}
 	return n
 }
 
-// RecordPublished records a published message.
-func (l *Ledger) RecordPublished(msg core.Message) {
-	l.Append(Event{
-		ID:          "pub-" + msg.ID,
-		MsgID:       msg.ID,
-		Key:         msg.Key,
-		Type:        Published,
-		Time:        time.Now(),
-		Traceparent: msg.Traceparent,
-	})
-}
-
-// RecordEffect records a business effect.
-func (l *Ledger) RecordEffect(msgID, effectID string) {
-	l.Append(Event{
-		ID:    "eff-" + effectID,
-		MsgID: msgID,
-		Type:  Effect,
-		Time:  time.Now(),
-	})
+// First returns the first event of type t for message id.
+func (v *View) First(id string, t Type) (Event, bool) {
+	for _, e := range v.ByMsg[id] {
+		if e.Type == t {
+			return e, true
+		}
+	}
+	return Event{}, false
 }
