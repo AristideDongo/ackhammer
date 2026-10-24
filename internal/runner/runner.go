@@ -116,12 +116,12 @@ func Execute(ctx context.Context, target core.Target, sc core.Scenario) (*report
 
 	pi, poisonSupported := target.(core.PoisonInspector)
 	if poisonSupported {
-		ids, err := pi.PoisonedIDs(ctx)
+		msgs, err := pi.PoisonedMessages(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("ackhammer: read poison queue: %w", err)
 		}
-		for _, id := range ids {
-			l.Append(ledger.Event{Type: ledger.Poisoned, MsgID: id})
+		for _, m := range msgs {
+			l.Append(ledger.Event{Type: ledger.Poisoned, MsgID: m.ID, Key: m.Key, Traceparent: m.Traceparent})
 		}
 	}
 	if err := target.Close(context.WithoutCancel(ctx)); err != nil {

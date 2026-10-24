@@ -248,3 +248,35 @@ func TestConsumerExitIsReported(t *testing.T) {
 		t.Errorf("the error is not in the report:\n%s", rep.Text())
 	}
 }
+
+// traceDropper loses the traceparent on redeliveries, like a retry path
+// that rebuilds the message without its metadata.
+type traceDropper struct{ *memtarget.Target }
+
+func (d traceDropper) Consume(ctx context.Context, h ackhammer.Handler) error {
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	return d.Target.Consume(ctx, func(ctx context.Context, m ackhammer.Message) error {
+		mu.Lock()
+		again := seen[m.ID]
+		seen[m.ID] = true
+		mu.Unlock()
+		if again {
+			m.Traceparent = ""
+		}
+		return h(ctx, m)
+	})
+}
+
+func TestTraceContinuity(t *testing.T) {
+	sc := ackhammer.Scenario{
+		Name:   "trace",
+		Faults: []ackhammer.Fault{fault.HandlerError(fault.EveryNth(3), 1), fault.HandlerError(fault.OnMessage(1), 10)},
+		Expect: ackhammer.AtLeastOnce().WithPoisonAfter(3).WithTraceContinuity(),
+	}
+	rep, got := execute(t, memtarget.New(memtarget.Config{PoisonAfter: 3}), sc)
+	expectStatus(t, rep, got, map[string]invariant.Status{"TraceContinuity": invariant.Pass, "PoisonRouted": invariant.Pass})
+
+	rep, got = execute(t, traceDropper{memtarget.New(memtarget.Config{PoisonAfter: 3})}, sc)
+	expectStatus(t, rep, got, map[string]invariant.Status{"TraceContinuity": invariant.Fail})
+}

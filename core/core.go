@@ -53,11 +53,12 @@ type ConsumerStopper interface {
 	StopConsuming(ctx context.Context) error
 }
 
-// PoisonInspector targets can list the messages routed to the poison queue.
-// Required by the PoisonRouted invariant.
+// PoisonInspector targets can list the messages routed to the poison queue,
+// as they arrived there (so that TraceContinuity can check their
+// traceparent). Required by the PoisonRouted invariant.
 type PoisonInspector interface {
 	Target
-	PoisonedIDs(ctx context.Context) ([]string, error)
+	PoisonedMessages(ctx context.Context) ([]Message, error)
 }
 
 // Killer targets run their consumer in a separate process that can be
@@ -106,6 +107,9 @@ type Guarantee struct {
 	// PoisonAfter is the number of failures after which a message must be
 	// in the poison queue. 0 means there is no poison queue.
 	PoisonAfter int
+	// TraceContinuity requires every delivery, retry and poisoned copy of a
+	// message to carry the trace ID it was published with.
+	TraceContinuity bool
 }
 
 // WithMaxRedeliveries returns a copy of g with MaxRedeliveries set.
@@ -116,6 +120,9 @@ func (g Guarantee) WithRedeliveryWithin(d time.Duration) Guarantee { g.Redeliver
 
 // WithPoisonAfter returns a copy of g with PoisonAfter set.
 func (g Guarantee) WithPoisonAfter(n int) Guarantee { g.PoisonAfter = n; return g }
+
+// WithTraceContinuity returns a copy of g that requires trace continuity.
+func (g Guarantee) WithTraceContinuity() Guarantee { g.TraceContinuity = true; return g }
 
 // WithOrdering returns a copy of g with Ordering set.
 func (g Guarantee) WithOrdering(o Ordering) Guarantee { g.Ordering = o; return g }

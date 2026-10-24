@@ -66,3 +66,49 @@ func TestPoisonQueueMiddleware(t *testing.T) {
 		Seed:   3,
 	})
 }
+
+// TestTraceThroughRetryAndPoison checks that the traceparent metadata
+// survives Watermill's Retry and PoisonQueue middlewares, and that a
+// middleware rebuilding the message without metadata is caught.
+func TestTraceThroughRetryAndPoison(t *testing.T) {
+	sc := ackhammer.Scenario{
+		Name:   "trace",
+		Faults: []ackhammer.Fault{fault.HandlerError(fault.OnMessage(2), 100), fault.HandlerError(fault.EveryNth(4), 1)},
+		Expect: ackhammer.AtLeastOnce().WithPoisonAfter(3).WithTraceContinuity(),
+		Seed:   4,
+	}
+	target := func(extra ...message.HandlerMiddleware) ackhammer.Target {
+		ps := newPubSub()
+		poison, err := middleware.PoisonQueue(ps, "orders_poison")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return watermill.New(watermill.Config{
+			Publisher: ps, Subscriber: ps, Topic: "orders",
+			Middlewares:      append([]message.HandlerMiddleware{poison, middleware.Retry{MaxRetries: 2}.Middleware}, extra...),
+			PoisonTopic:      "orders_poison",
+			PoisonSubscriber: ps,
+		})
+	}
+
+	ackhammer.Run(t, target(), sc)
+
+	// Rebuilds the message from its payload only: metadata is lost.
+	stripMetadata := func(h message.HandlerFunc) message.HandlerFunc {
+		return func(m *message.Message) ([]*message.Message, error) {
+			c := message.NewMessage(m.UUID, m.Payload)
+			c.SetContext(m.Context())
+			c.Metadata.Set(watermill.KeyMetadata, m.Metadata.Get(watermill.KeyMetadata))
+			return h(c)
+		}
+	}
+	rep, err := ackhammer.Execute(t.Context(), target(stripMetadata), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rep.Results {
+		if r.Name == "TraceContinuity" && r.Status != "FAIL" {
+			t.Errorf("metadata loss not detected\n%s", rep.Text())
+		}
+	}
+}

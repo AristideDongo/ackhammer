@@ -153,7 +153,7 @@ Expect: ackhammer.EffectivelyOnce(),
 | `EffectivelyOnce()` | Transport duplicates allowed, each recorded effect applied once. |
 | `OrderedPerKey()` | At-least-once, and messages with the same key handled in publication order. |
 
-Refine with `.WithMaxRedeliveries(n)` (deliveries allowed after a success), `.WithRedeliveryWithin(d)` and `.WithPoisonAfter(n)`.
+Refine with `.WithMaxRedeliveries(n)` (deliveries allowed after a success), `.WithRedeliveryWithin(d)`, `.WithPoisonAfter(n)` and `.WithTraceContinuity()`.
 
 ## Faults
 
@@ -179,7 +179,8 @@ Selectors: `OnMessage(n)`, `OnKey(k)`, `EveryNth(n)`, `Random(p)`. Random select
 | `PerKeyOrder` | Same-key messages are first handled in publication order. |
 | `PoisonRouted` | A message that failed `PoisonAfter` times is in the poison queue (needs `PoisonInspector`). |
 | `RedeliveryLatency` | After a failure or a fault, the next delivery comes within `RedeliveryWithin`. |
-| `NoStall` | `Consume` returns when cancelled, and progress continues after the last fault. |
+| `NoStall` | `Consume` returns when cancelled, does not exit on its own, and progress continues after the last fault. |
+| `TraceContinuity` | With `.WithTraceContinuity()`, every delivery, retry and poisoned copy keeps the W3C trace ID it was published with. |
 
 ## Replay and reports
 

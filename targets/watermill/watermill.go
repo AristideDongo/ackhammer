@@ -61,7 +61,7 @@ type Target struct {
 	poisonCancel context.CancelFunc
 	poisonDone   chan struct{}
 	poisonMu     sync.Mutex
-	poisoned     []string
+	poisoned     []core.Message
 }
 
 var (
@@ -203,7 +203,7 @@ func (t *Target) startPoisonReader() error {
 			defer close(t.poisonDone)
 			for m := range msgs {
 				t.poisonMu.Lock()
-				t.poisoned = append(t.poisoned, m.UUID)
+				t.poisoned = append(t.poisoned, FromWatermill(m))
 				t.poisonMu.Unlock()
 				m.Ack()
 			}
@@ -217,16 +217,16 @@ type poisonTarget struct{ *Target }
 
 var _ core.PoisonInspector = (*poisonTarget)(nil)
 
-// PoisonedIDs lists the messages read from the poison topic so far. It
+// PoisonedMessages lists the messages read from the poison topic so far. It
 // waits briefly for messages published just before the end of the run.
-func (t *poisonTarget) PoisonedIDs(ctx context.Context) ([]string, error) {
+func (t *poisonTarget) PoisonedMessages(ctx context.Context) ([]core.Message, error) {
 	select {
 	case <-time.After(100 * time.Millisecond):
 	case <-ctx.Done():
 	}
 	t.poisonMu.Lock()
 	defer t.poisonMu.Unlock()
-	return append([]string(nil), t.poisoned...), nil
+	return append([]core.Message(nil), t.poisoned...), nil
 }
 
 // nonClosing stops the router from closing the subscriber, so that Consume

@@ -57,7 +57,7 @@ type Target struct {
 	queue    []*entry          // ready for delivery
 	inflight map[string]*entry // delivered, waiting for ack/nack
 	acked    []*entry
-	poisoned []string
+	poisoned []core.Message
 	token    uint64
 	stop     chan struct{} // closed by StopConsuming
 	closed   bool
@@ -214,7 +214,7 @@ func (t *Target) settle(id string, token uint64, err error) {
 	}
 	e.failures++
 	if t.cfg.PoisonAfter > 0 && e.failures >= t.cfg.PoisonAfter {
-		t.poisoned = append(t.poisoned, e.msg.ID)
+		t.poisoned = append(t.poisoned, e.msg)
 		return
 	}
 	t.queue = append(t.queue, e)
@@ -244,11 +244,11 @@ func (t *Target) Restart(context.Context) error {
 	return nil
 }
 
-// PoisonedIDs lists the messages in the poison queue.
-func (t *Target) PoisonedIDs(context.Context) ([]string, error) {
+// PoisonedMessages lists the messages in the poison queue.
+func (t *Target) PoisonedMessages(context.Context) ([]core.Message, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return append([]string(nil), t.poisoned...), nil
+	return append([]core.Message(nil), t.poisoned...), nil
 }
 
 func (t *Target) Close(context.Context) error {

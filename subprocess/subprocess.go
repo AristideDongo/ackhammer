@@ -193,8 +193,8 @@ func (t *Target) clear(cmd *exec.Cmd) {
 
 type poisonTarget struct{ *Target }
 
-func (p *poisonTarget) PoisonedIDs(ctx context.Context) ([]string, error) {
-	return p.cfg.Target.(core.PoisonInspector).PoisonedIDs(ctx)
+func (p *poisonTarget) PoisonedMessages(ctx context.Context) ([]core.Message, error) {
+	return p.cfg.Target.(core.PoisonInspector).PoisonedMessages(ctx)
 }
 
 // Self returns a Command that re-executes the current binary as the child

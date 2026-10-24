@@ -153,3 +153,35 @@ func TestNoStall(t *testing.T) {
 		t.Errorf("progress after fault: %+v", r)
 	}
 }
+
+func TestTraceContinuity(t *testing.T) {
+	const (
+		tp1   = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+		retry = "00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01" // same trace, new span
+		other = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	)
+	g := atLeastOnce.WithTraceContinuity()
+	run := func(tps ...string) Result {
+		events := []ledger.Event{{Seq: 1, Type: ledger.Published, MsgID: "m1", Traceparent: tp1}}
+		for i, tp := range tps {
+			typ := ledger.Received
+			if i == len(tps)-1 && tp == "poison:"+other {
+				typ, tp = ledger.Poisoned, other
+			}
+			events = append(events, ledger.Event{Seq: i + 2, Type: typ, MsgID: "m1", Traceparent: tp})
+		}
+		return check(TraceContinuity, ledger.NewView(events), g)
+	}
+	if r := run(tp1, retry); r.Status != Pass {
+		t.Errorf("new span on retry is fine: %+v", r)
+	}
+	if r := run(tp1, ""); r.Status != Fail {
+		t.Errorf("traceparent dropped on retry: %+v", r)
+	}
+	if r := run(tp1, "poison:"+other); r.Status != Fail {
+		t.Errorf("poisoned copy with another trace: %+v", r)
+	}
+	if r := check(TraceContinuity, ledger.NewView(nil), atLeastOnce); r.Status != Skip {
+		t.Errorf("not declared: %+v", r)
+	}
+}
