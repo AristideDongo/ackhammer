@@ -1,6 +1,7 @@
 package invariant
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -138,6 +139,10 @@ func TestNoStall(t *testing.T) {
 	stuck := history(pub("m1"), recv("m1", 1), ok("m1", 2), step{ledger.ConsumerStuck, "", 3})
 	if r := check(NoStall, stuck, atLeastOnce); r.Status != Fail {
 		t.Errorf("stuck consumer: %+v", r)
+	}
+	exited := history(pub("m1"), step{ledger.ConsumerExit, "", 1})
+	if r := check(NoStall, exited, atLeastOnce); r.Status != Fail || !strings.Contains(r.Summary, "returned on its own") {
+		t.Errorf("consumer exit: %+v", r)
 	}
 	frozen := history(pub("m1"), pub("m2"), ok("m1", 1), timedFault(2))
 	if r := check(NoStall, frozen, atLeastOnce); r.Status != Fail {

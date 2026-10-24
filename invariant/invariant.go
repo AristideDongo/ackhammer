@@ -290,14 +290,17 @@ func settledBefore(v *ledger.View, id string, seq, poisonAfter int) bool {
 }
 
 // NoStall: the consumer keeps making progress. It fails if Consume did not
-// return when cancelled, or if messages are left pending and nothing was
+// return when cancelled, if it returned without being asked to, or if messages are left pending and nothing was
 // handled after the last fault.
 func NoStall(in Input) Result {
 	const name = "NoStall"
 	v := in.View
 	for _, e := range v.Events {
-		if e.Type == ledger.ConsumerStuck {
+		switch e.Type {
+		case ledger.ConsumerStuck:
 			return Result{Name: name, Status: Fail, Summary: "Consume did not return after its context was cancelled"}
+		case ledger.ConsumerExit:
+			return Result{Name: name, Status: Fail, Summary: "Consume returned on its own: " + e.Detail}
 		}
 	}
 	var pending []string
