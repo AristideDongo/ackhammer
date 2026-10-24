@@ -181,13 +181,21 @@ Selectors: `OnMessage(n)`, `OnKey(k)`, `EveryNth(n)`, `Random(p)`. Random select
 | `RedeliveryLatency` | After a failure or a fault, the next delivery comes within `RedeliveryWithin`. |
 | `NoStall` | `Consume` returns when cancelled, and progress continues after the last fault. |
 
+## Real bugs reproduced
+
+`scenarios/upstream` runs Ackhammer against the affected versions of real libraries, on real brokers (Docker). Each scenario checks that the bug is detected and, when a fix or workaround exists, that Ackhammer turns green with it.
+
+| Issue | Library | What Ackhammer reports |
+|---|---|---|
+| [watermill#700](https://github.com/ThreeDotsLabs/watermill/issues/700) | watermill-sql v4.1.5, Postgres | `NoLoss` FAIL: msg-4 to msg-10 never delivered after msg-3 misses the ack deadline. Green with the workaround from the issue. |
+
 ## Replay and reports
 
 Every run is seeded. A failing run prints the command to replay it; `ACKHAMMER_SEED` overrides the seed. Set `ACKHAMMER_REPORT_DIR` to write each report as JSON. Ackhammer is not a deterministic simulator: it drives real libraries and real timing, so keep explicit margins on time-based guarantees.
 
 ## Roadmap
 
-- **v0.1**: Postgres and Pub/Sub emulator brokers via testcontainers, reproductions of watermill#700, #636, #671 and sdk-go#1234 in `scenarios/upstream`.
+- **v0.1**: reproductions of watermill#636, #671 and sdk-go#1234 in `scenarios/upstream`.
 - **v0.2**: per-key order on real brokers, `TraceContinuity`, process kill and network faults (Toxiproxy), JUnit/HTML reports, GitHub Action, YAML scenarios and CLI.
 - **v0.3**: a resume contract for SSE, WebSocket and MQTT, with conformance scenarios.
 
