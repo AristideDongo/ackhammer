@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/AristideDongo/ackhammer/core"
@@ -50,6 +51,7 @@ func Check(in Input) []Result {
 		PoisonRouted(in),
 		RedeliveryLatency(in),
 		NoStall(in),
+		TraceContinuity(in),
 	}
 }
 
@@ -322,4 +324,36 @@ func NoStall(in Input) Result {
 		}
 	}
 	return Result{Name: name, Status: Fail, Summary: fmt.Sprintf("no progress after the last fault, %d messages pending", len(pending)), MsgIDs: pending}
+}
+
+// TraceContinuity: every delivery and every poisoned copy of a message
+// carries a valid W3C traceparent with the trace ID it was published with.
+// The parent span ID may change at each hop; the trace ID may not.
+func TraceContinuity(in Input) Result {
+	const name = "TraceContinuity"
+	if !in.Guarantee.TraceContinuity {
+		return skip(name, "trace continuity not declared")
+	}
+	v := in.View
+	var bad []string
+	for _, p := range v.Published {
+		want := traceID(p.Traceparent)
+		for _, e := range v.ByMsg[p.MsgID] {
+			if (e.Type == ledger.Received || e.Type == ledger.Poisoned) && traceID(e.Traceparent) != want {
+				bad = append(bad, p.MsgID)
+				break
+			}
+		}
+	}
+	return verdict(name, bad, fmt.Sprintf("%d messages lost their trace ID on a delivery, retry or poison queue", len(bad)))
+}
+
+// traceID extracts the trace ID of a W3C traceparent
+// (version-traceid-parentid-flags), or "" if it is malformed.
+func traceID(traceparent string) string {
+	parts := strings.Split(traceparent, "-")
+	if len(parts) != 4 || len(parts[1]) != 32 || len(parts[2]) != 16 || strings.Trim(parts[1], "0") == "" {
+		return ""
+	}
+	return parts[1]
 }
