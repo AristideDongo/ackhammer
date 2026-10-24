@@ -1,0 +1,10 @@
+go 1.23
+
+use (
+	.
+	./cmd/ackhammer
+	./targets/watermill
+	./targets/cloudevents
+	./brokers
+	./scenarios
+)
